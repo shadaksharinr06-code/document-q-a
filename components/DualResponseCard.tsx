@@ -31,9 +31,10 @@ export const DualResponseCard: React.FC<DualResponseCardProps> = ({
   const [selectedCitation, setSelectedCitation] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'doc' | 'supp' | null>(null);
 
-  const isNotFound = response.document_grounded_answer
-    .toLowerCase()
-    .includes('this specific information was not found in the uploaded document');
+  const answerLower = response.document_grounded_answer.toLowerCase();
+  const isNotFound =
+    answerLower.includes('i cannot find this information in the provided documents') ||
+    answerLower.includes('this specific information was not found in the uploaded document');
 
   const copyToClipboard = (text: string, type: 'doc' | 'supp') => {
     navigator.clipboard.writeText(text);

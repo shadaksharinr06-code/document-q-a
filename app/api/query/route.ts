@@ -16,9 +16,9 @@ function synthesizeOfflineAnswer(
 ): DualRAGResponse {
   if (chunks.length === 0) {
     return {
-      document_grounded_answer: 'This specific information was not found in the uploaded document.',
+      document_grounded_answer: 'I cannot find this information in the provided documents.',
       citations: [],
-      supplemental_knowledge_answer: `While "${filename}" does not contain information on "${query}", industry best practices and world knowledge typically emphasize foundational standards, systematic validation, and structured operational workflows for this domain.`,
+      supplemental_knowledge_answer: `While "${filename}" does not contain explicit information on "${query}", industry best practices and world knowledge typically emphasize foundational standards, systematic validation, and structured operational workflows for this domain.`,
     };
   }
 
@@ -75,7 +75,7 @@ function synthesizeOfflineAnswer(
     }
 
     return {
-      document_grounded_answer: 'This specific information was not found in the uploaded document.',
+      document_grounded_answer: 'I cannot find this information in the provided documents.',
       citations: [],
       supplemental_knowledge_answer: `The uploaded document "${filename}" does not appear to reference "${query}". From a general industry perspective, topics relating to "${query}" involve standardized conventions, core operational frameworks, and risk-management principles across modern enterprise environments.`,
     };
@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
           dualResponse = {
             document_grounded_answer:
               parsed.document_grounded_answer ||
-              'This specific information was not found in the uploaded document.',
+              'I cannot find this information in the provided documents.',
             citations: Array.isArray(parsed.citations) ? parsed.citations : [],
             supplemental_knowledge_answer:
               parsed.supplemental_knowledge_answer ||
@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
           dualResponse = {
             document_grounded_answer:
               parsed.document_grounded_answer ||
-              'This specific information was not found in the uploaded document.',
+              'I cannot find this information in the provided documents.',
             citations: Array.isArray(parsed.citations) ? parsed.citations : [],
             supplemental_knowledge_answer:
               parsed.supplemental_knowledge_answer ||

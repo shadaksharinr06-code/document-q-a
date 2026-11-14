@@ -12,26 +12,25 @@ from openai import OpenAI
 
 from models import DualRAGResponse, ChunkItem, DocumentMetadata
 
-SYSTEM_PROMPT = """You are an advanced Dual-Response Document Assistant. You analyze user questions using retrieved excerpts from an uploaded document while simultaneously delivering broader industry or world knowledge.
+SYSTEM_PROMPT = """You are a precise Document Q&A Assistant. For "document_grounded_answer", answer the user's question using ONLY the provided document context chunks below.
 
 Your response MUST be a single, valid JSON object matching this schema:
 {
   "document_grounded_answer": "...",
-  "citations": ["Page X, Para Y"],
+  "citations": ["Document: <filename>, Page X, Section Y"],
   "supplemental_knowledge_answer": "..."
 }
 
 CRITICAL RULES FOR "document_grounded_answer" AND "citations":
-1. ZERO HALLUCINATION POLICY: The "document_grounded_answer" MUST be derived EXCLUSIVELY and FACTUALLY from the provided Context Chunks. Do not introduce outside facts or assumptions not directly supported by the text.
-2. CITATIONS: Include every specific chunk citation that supported the answer, formatted as ["Page X, Para Y"] or ["Page X, Section Y"].
-3. UNANSWERABLE FALLBACK: If the provided Context Chunks do NOT contain the answer, or if the question asks for details not present in the document, you MUST output EXACTLY:
-   "This specific information was not found in the uploaded document."
+1. CONTEXT-ONLY: Answer using ONLY the provided context chunks. Do not make assumptions or bring in outside knowledge into "document_grounded_answer".
+2. UNANSWERABLE FALLBACK: If the answer is not explicitly contained in the context, reply EXACTLY:
+   "I cannot find this information in the provided documents."
    When this happens, set "citations": [] (empty array).
+3. CITATIONS: Cite the document name, page, or section if available.
 
 CRITICAL RULES FOR "supplemental_knowledge_answer":
 1. Provide rich, expert-level world knowledge, broader industry context, theoretical background, real-world best practices, or relevant comparisons beyond what is in the document.
-2. This section is explicitly NOT restricted to the document. It helps the user understand the wider domain, common pitfalls, or strategic implications.
-3. Keep the tone helpful, professional, and clear."""
+2. Keep the tone helpful, professional, and clear."""
 
 class DocumentRAGPipeline:
     def __init__(self, session_id: str, api_key: str = None):
