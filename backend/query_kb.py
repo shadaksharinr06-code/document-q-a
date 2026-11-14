@@ -6,74 +6,72 @@ from openai import OpenAI
 
 DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
 
-SYSTEM_PROMPT = """You are a precise Document Q&A Assistant. For "document_grounded_answer", answer the user's question using ONLY the provided document context below.
+# 1. Initialize Embeddings & Chroma Retriever
+def initialize_retriever(persist_directory=DB_DIR, k=4):
+    embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+    vectorstore = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+    retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+    return retriever
 
-Your response MUST be a single, valid JSON object matching this schema:
-{
+# 2. Strict Prompt Template with Dual Response Format
+PROMPT_TEMPLATE = """You are a precise Document Q&A Assistant. For "document_grounded_answer", answer the user's question using ONLY the provided context below.
+- If the answer is not explicitly contained in the context, reply: "I cannot find this information in the provided documents."
+- Do not make assumptions or bring in outside knowledge.
+- Cite the document name or section if available.
+
+Your response MUST be a valid JSON object matching this schema:
+{{
   "document_grounded_answer": "...",
   "citations": ["Document: <filename>, Page X"],
   "supplemental_knowledge_answer": "..."
-}
+}}
 
-CRITICAL RULES FOR "document_grounded_answer" AND "citations":
-1. CONTEXT-ONLY: Answer using ONLY the provided context. Do not make assumptions or bring in outside knowledge into "document_grounded_answer".
-2. UNANSWERABLE FALLBACK: If the answer is not explicitly contained in the context, reply EXACTLY:
-   "I cannot find this information in the provided documents."
-   When this happens, set "citations": [] (empty array).
-3. CITATIONS: Cite the document name, page, or section if available.
-
-CRITICAL RULES FOR "supplemental_knowledge_answer":
-1. Provide broader contextual insights, industry best practices, explanations, or related background retrieved from your broader knowledge base outside the document.
-2. Keep the tone helpful, professional, and clear."""
-
-def query_knowledge_base(question: str, top_k: int = 4):
-    if not os.path.exists(DB_DIR):
-        print(f"Error: Chroma database not found at {DB_DIR}. Run train_kb.py first.")
-        return
-
-    # 1. Load Chroma Vector Store
-    embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
-    vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
-
-    # 2. Retrieve top-k documents with similarity scores
-    results = vectorstore.similarity_search_with_relevance_scores(question, k=top_k)
-    if not results:
-        print("I cannot find this information in the provided documents.")
-        return
-
-    # Format context blocks
-    context_blocks = []
-    for idx, (doc, score) in enumerate(results):
-        source = doc.metadata.get("source", "Unknown Document")
-        page = doc.metadata.get("page", 0) + 1
-        context_blocks.append(
-            f"--- CONTEXT CHUNK {idx + 1} [Document: {os.path.basename(source)}, Page {page}] (Relevance: {score:.3f}) ---\n{doc.page_content}\n"
-        )
-
-    context_str = "\n".join(context_blocks)
-
-    user_prompt = f"""Context:
-{context_str}
+Context:
+{context}
 
 Question:
 {question}
 
 Instructions:
-You are a precise Document Q&A Assistant. Answer the user's question using ONLY the provided context above.
-- If the answer is not explicitly contained in the context, reply: "I cannot find this information in the provided documents."
-- Do not make assumptions or bring in outside knowledge for "document_grounded_answer".
-- Cite the document name or section if available in "citations".
-- Provide broader industry context and world knowledge in "supplemental_knowledge_answer"."""
+1. "document_grounded_answer": Answer using ONLY the provided context above (or reply "I cannot find this information in the provided documents.").
+2. "citations": Array of citation tags for the chunks used.
+3. "supplemental_knowledge_answer": Broader context, industry standards, or world knowledge outside the document."""
 
-    # 3. Call LLM for Dual-Response Synthesis
+def query_knowledge_base(question: str):
+    if not os.path.exists(DB_DIR):
+        print(f"Error: Chroma database directory '{DB_DIR}' not found. Run train_kb.py first.")
+        return
+
+    # Use the retriever as defined
+    retriever = initialize_retriever(persist_directory=DB_DIR, k=4)
+    docs = retriever.invoke(question)
+
+    if not docs:
+        print("\n[FROM YOUR DOCUMENT]")
+        print("I cannot find this information in the provided documents.")
+        return
+
+    # Format retrieved document context
+    context_chunks = []
+    for idx, doc in enumerate(docs):
+        src = os.path.basename(doc.metadata.get("source", "Document"))
+        page = doc.metadata.get("page", 0) + 1
+        context_chunks.append(
+            f"--- CHUNK {idx + 1} [Document: {src}, Page {page}] ---\n{doc.page_content}\n"
+        )
+    formatted_context = "\n".join(context_chunks)
+
+    # Build prompt
+    prompt = PROMPT_TEMPLATE.format(context=formatted_context, question=question)
+
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
         client = OpenAI(api_key=api_key)
         completion = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
+                {"role": "system", "content": "You are a precise Document Q&A Assistant."},
+                {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
             temperature=0.1
@@ -88,11 +86,10 @@ You are a precise Document Q&A Assistant. Answer the user's question using ONLY 
         print(data.get("supplemental_knowledge_answer"))
         print("========================================================\n")
     else:
-        # Local extractive display if no OpenAI key is set
-        print("\nContext Chunks Retrieved from ChromaDB:")
-        for block in context_blocks:
-            print(block)
-        print("\nSet OPENAI_API_KEY to generate live dual-response GPT-4o synthesis.")
+        print("\n--- Retrieved Context from ChromaDB (k=4) ---")
+        for chunk in context_chunks:
+            print(chunk)
+        print("Set OPENAI_API_KEY to generate live dual-response GPT-4o synthesis.")
 
 if __name__ == "__main__":
     import sys
