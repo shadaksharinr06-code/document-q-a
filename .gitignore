@@ -35,11 +35,10 @@ build/
 develop-eggs/
 dist/
 downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
+# Python virtual envs (specific to backend)
+backend/venv/
+backend/env/
+.venv/
 sdist/
 var/
 wheels/
