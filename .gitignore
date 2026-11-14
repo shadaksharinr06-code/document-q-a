@@ -57,3 +57,10 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# ChromaDB and Knowledge Base Docs
+chroma_db/
+backend/chroma_db/
+docs/
+backend/docs/
+*.sqlite3
