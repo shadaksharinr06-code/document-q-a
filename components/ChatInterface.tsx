@@ -84,10 +84,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }),
       });
 
-      const data = await res.json();
+      let data: any = null;
+      const resText = await res.text();
+      try {
+        data = JSON.parse(resText);
+      } catch (parseErr) {
+        if (!res.ok) {
+          throw new Error(`Server returned error (${res.status}): ${resText.slice(0, 150) || res.statusText}`);
+        }
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to process query.');
+        throw new Error(data?.error || data?.detail || 'Failed to process query.');
       }
 
       const assistantMessage: ChatMessage = {

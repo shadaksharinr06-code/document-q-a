@@ -20,16 +20,20 @@ export async function POST(req: NextRequest) {
     if (backendUrl) {
       try {
         const targetUrl = new URL('/api/upload', backendUrl);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
         const backendRes = await fetch(targetUrl.toString(), {
           method: 'POST',
           body: formData,
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
         if (backendRes.ok) {
           const data = await backendRes.json();
           return NextResponse.json(data);
         }
       } catch (proxyErr) {
-        console.warn('Proxy to BACKEND_URL failed, falling back to local handler:', proxyErr);
+        console.warn('Proxy to BACKEND_URL timed out or failed, falling back to local handler:', proxyErr);
       }
     }
 
