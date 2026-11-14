@@ -1,6 +1,6 @@
 import os
 import uuid
-from typing import Dict
+from typing import Dict, Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -34,11 +34,14 @@ MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 def health_check():
     return {"status": "ok", "service": "DocuDual RAG FastAPI Service"}
 
-@app.post("/api/upload", response_model=DocumentMetadata)
+@app.post("/api/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    session_id: str = Form(None),
-    api_key: str = Form(None)
+    session_id: Optional[str] = Form(None),
+    sessionId: Optional[str] = Form(None),
+    api_key: Optional[str] = Form(None),
+    apiKey: Optional[str] = Form(None),
+    provider: Optional[str] = Form(None)
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected.")
@@ -54,13 +57,18 @@ async def upload_document(
     if len(file_bytes) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 25MB limit.")
 
-    active_session_id = session_id or str(uuid.uuid4())
-    pipeline = DocumentRAGPipeline(session_id=active_session_id, api_key=api_key)
+    active_session_id = session_id or sessionId or str(uuid.uuid4())
+    active_api_key = api_key or apiKey
+    pipeline = DocumentRAGPipeline(session_id=active_session_id, api_key=active_api_key)
 
     try:
         metadata = pipeline.chunk_and_index(file_bytes, file.filename)
         pipelines[active_session_id] = pipeline
-        return metadata
+        return {
+            "success": True,
+            "sessionId": active_session_id,
+            "metadata": metadata
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
@@ -69,7 +77,14 @@ async def query_document(req: QueryRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    pipeline = pipelines.get(req.session_id)
+    target_session_id = req.session_id
+    if not target_session_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No session ID provided. Please upload a document first."
+        )
+
+    pipeline = pipelines.get(target_session_id)
     if not pipeline:
         raise HTTPException(
             status_code=404,
@@ -91,9 +106,10 @@ async def query_document(req: QueryRequest):
 
 @app.post("/api/reset")
 async def reset_session(req: ResetRequest):
-    if req.session_id in pipelines:
-        del pipelines[req.session_id]
-    return {"success": True, "message": f"Session {req.session_id} reset successfully."}
+    sid = req.session_id
+    if sid and sid in pipelines:
+        del pipelines[sid]
+    return {"success": True, "message": f"Session {sid} reset successfully."}
 
 if __name__ == "__main__":
     import uvicorn

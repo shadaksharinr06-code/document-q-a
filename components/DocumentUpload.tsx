@@ -117,7 +117,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
       setUploadStep('Ready');
       setTimeout(() => {
         setUploadStep(null);
-        onDocumentLoaded(data.metadata);
+        onDocumentLoaded(data.metadata || data);
       }, 400);
     } catch (err: any) {
       setErrorMessage(err.message || 'An error occurred during upload.');

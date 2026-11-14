@@ -95,7 +95,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         role: 'assistant',
         content: '',
         response: data.response as DualRAGResponse,
-        retrievedChunks: data.retrievedChunks,
+        retrievedChunks: data.retrievedChunks || data.retrieved_chunks || [],
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
