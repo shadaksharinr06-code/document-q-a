@@ -95,6 +95,13 @@ export async function POST(req: NextRequest) {
       uploadedAt: new Date().toISOString(),
       isScannedWarning: parseResult.isScannedWarning,
       status: 'ready',
+      chunks: chunks.map((c) => ({
+        id: c.id,
+        text: c.text,
+        pageNumber: c.pageNumber,
+        sectionOrPara: c.sectionOrPara,
+        sourceFile: c.sourceFile,
+      })),
     };
 
     return NextResponse.json({

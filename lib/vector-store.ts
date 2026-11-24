@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { DocumentChunk } from './types';
@@ -22,6 +25,14 @@ interface SessionData {
 }
 
 const sessions = new Map<string, SessionData>();
+const CACHE_DIR = path.join(os.tmpdir(), 'docudual_sessions');
+try {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
+} catch (e) {
+  // ignore
+}
 
 const STOPWORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', 'aren',
@@ -186,7 +197,7 @@ export class VectorStore {
       embedding: embeddings ? embeddings[i] : undefined,
     }));
 
-    sessions.set(sessionId, {
+    const sessionObj: SessionData = {
       chunks: enrichedChunks,
       metadata: {
         ...metadata,
@@ -195,7 +206,26 @@ export class VectorStore {
       bm25Index,
       apiKey: options.apiKey,
       provider: options.provider || (options.apiKey ? 'openai' : 'local'),
-    });
+    };
+
+    sessions.set(sessionId, sessionObj);
+
+    try {
+      if (!fs.existsSync(CACHE_DIR)) {
+        fs.mkdirSync(CACHE_DIR, { recursive: true });
+      }
+      fs.writeFileSync(
+        path.join(CACHE_DIR, `${sessionId}.json`),
+        JSON.stringify({
+          chunks: enrichedChunks,
+          metadata: sessionObj.metadata,
+          apiKey: sessionObj.apiKey,
+          provider: sessionObj.provider,
+        })
+      );
+    } catch (fsErr) {
+      // Non-critical if filesystem is read-only
+    }
   }
 
   public async similaritySearch(
@@ -204,7 +234,7 @@ export class VectorStore {
     topK = 6,
     queryApiKey?: string
   ): Promise<DocumentChunk[]> {
-    const session = sessions.get(sessionId);
+    const session = this.getSession(sessionId);
     if (!session || session.chunks.length === 0) {
       return [];
     }
@@ -252,10 +282,41 @@ export class VectorStore {
   }
 
   public getSession(sessionId: string): SessionData | undefined {
-    return sessions.get(sessionId);
+    let session = sessions.get(sessionId);
+    if (!session) {
+      try {
+        const filePath = path.join(CACHE_DIR, `${sessionId}.json`);
+        if (fs.existsSync(filePath)) {
+          const raw = fs.readFileSync(filePath, 'utf-8');
+          const data = JSON.parse(raw);
+          if (data && data.chunks && Array.isArray(data.chunks)) {
+            const bm25Index = this.buildBM25Index(data.chunks);
+            session = {
+              chunks: data.chunks,
+              metadata: data.metadata,
+              bm25Index,
+              apiKey: data.apiKey,
+              provider: data.provider,
+            };
+            sessions.set(sessionId, session);
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+    return session;
   }
 
   public clearSession(sessionId: string): boolean {
+    try {
+      const filePath = path.join(CACHE_DIR, `${sessionId}.json`);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (e) {
+      // ignore
+    }
     return sessions.delete(sessionId);
   }
 }

@@ -141,7 +141,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const session = vectorStore.getSession(sessionId);
+    let session = vectorStore.getSession(sessionId);
+
+    // If serverless container cold-started or recycled, rehydrate seamlessly from client chunks
+    if ((!session || session.chunks.length === 0) && body.chunks && Array.isArray(body.chunks) && body.chunks.length > 0) {
+      await vectorStore.storeDocumentChunks(
+        sessionId,
+        body.chunks,
+        {
+          filename: body.filename || 'Uploaded Document',
+          pageCount: body.chunks[body.chunks.length - 1]?.pageNumber || 1,
+          chunkCount: body.chunks.length,
+        },
+        { apiKey, provider }
+      );
+      session = vectorStore.getSession(sessionId);
+    }
+
     if (!session || session.chunks.length === 0) {
       return NextResponse.json(
         { error: 'Session expired or document not found. Please re-upload.' },

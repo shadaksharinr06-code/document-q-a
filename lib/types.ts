@@ -9,6 +9,7 @@ export interface DocumentMetadata {
   isScannedWarning?: boolean;
   status: 'idle' | 'uploading' | 'extracting' | 'embedding' | 'ready' | 'error';
   errorMessage?: string;
+  chunks?: DocumentChunk[];
 }
 
 export interface DocumentChunk {

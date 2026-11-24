@@ -81,6 +81,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           sessionId: document.id,
           apiKey: apiKey || undefined,
           provider: provider,
+          chunks: document.chunks || undefined,
+          filename: document.name || undefined,
         }),
       });
 

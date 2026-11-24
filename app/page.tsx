@@ -17,8 +17,24 @@ import { ChatInterface } from '@/components/ChatInterface';
 export default function Home() {
   const [currentDocument, setCurrentDocument] = useState<DocumentMetadata | null>(null);
 
+  React.useEffect(() => {
+    try {
+      const savedDoc = sessionStorage.getItem('docudual_current_doc');
+      if (savedDoc) {
+        setCurrentDocument(JSON.parse(savedDoc));
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
   const handleDocumentLoaded = (metadata: DocumentMetadata) => {
     setCurrentDocument(metadata);
+    try {
+      sessionStorage.setItem('docudual_current_doc', JSON.stringify(metadata));
+    } catch (e) {
+      // ignore if storage quota exceeded
+    }
   };
 
   const handleResetSession = async () => {
@@ -34,6 +50,11 @@ export default function Home() {
       }
     }
     setCurrentDocument(null);
+    try {
+      sessionStorage.removeItem('docudual_current_doc');
+    } catch (e) {
+      // ignore
+    }
   };
 
   return (
