@@ -64,3 +64,5 @@ backend/chroma_db/
 docs/
 backend/docs/
 *.sqlite3
+
+.vercel
