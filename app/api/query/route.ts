@@ -3,22 +3,34 @@ import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { vectorStore } from '@/lib/vector-store';
 import { SYSTEM_PROMPT, buildUserPrompt } from '@/lib/prompt-templates';
+import {
+  fetchOnlineSupplementalKnowledge,
+  OnlineKnowledgeResult,
+} from '@/lib/online-knowledge';
 import { DualRAGResponse, DocumentChunk } from '@/lib/types';
 
 /**
- * Intelligent Extractive QA Engine used when no external LLM API key is provided
- * Synthesizes grounded facts from retrieved chunks without hallucination.
+ * Intelligent Extractive QA + Live Online Knowledge Engine used when no external LLM API key is provided.
+ * Synthesizes grounded facts from retrieved chunks without hallucination, and pairs them with
+ * live online knowledge tailored specifically to the user's question.
  */
 function synthesizeOfflineAnswer(
   query: string,
   chunks: DocumentChunk[],
-  filename: string
+  filename: string,
+  onlineResult: OnlineKnowledgeResult
 ): DualRAGResponse {
+  const supplementalFields = {
+    supplemental_knowledge_answer: onlineResult.synthesizedAnswer,
+    supplemental_sources: onlineResult.sources,
+    supplemental_mode: (onlineResult.usedOnline ? 'online' : 'offline') as 'online' | 'offline',
+  };
+
   if (chunks.length === 0) {
     return {
       document_grounded_answer: 'I cannot find this information in the provided documents.',
       citations: [],
-      supplemental_knowledge_answer: `While "${filename}" does not contain explicit information on "${query}", industry best practices and world knowledge typically emphasize foundational standards, systematic validation, and structured operational workflows for this domain.`,
+      ...supplementalFields,
     };
   }
 
@@ -70,14 +82,14 @@ function synthesizeOfflineAnswer(
       return {
         document_grounded_answer: `According to ${filename} (Page ${bestChunk.pageNumber}, ${bestChunk.sectionOrPara}):\n\n"${bestChunk.text}"`,
         citations: [`Page ${bestChunk.pageNumber}, ${bestChunk.sectionOrPara}`],
-        supplemental_knowledge_answer: `Regarding "${query}": Beyond the specifics presented in this document, standard industry methodologies suggest aligning with established domain principles, documenting architectural decisions, and conducting regular verification against stakeholder requirements.`,
+        ...supplementalFields,
       };
     }
 
     return {
       document_grounded_answer: 'I cannot find this information in the provided documents.',
       citations: [],
-      supplemental_knowledge_answer: `The uploaded document "${filename}" does not appear to reference "${query}". From a general industry perspective, topics relating to "${query}" involve standardized conventions, core operational frameworks, and risk-management principles across modern enterprise environments.`,
+      ...supplementalFields,
     };
   }
 
@@ -97,13 +109,41 @@ function synthesizeOfflineAnswer(
   const citations = Array.from(citationsSet);
   const groundedAnswer = `Direct findings extracted from ${filename}:\n\n${assembledPoints.join('\n\n')}`;
 
-  const supplemental = `Contextual Insights regarding "${query}":\n\nIn broader industry practice, the concepts discussed in your document typically interact with standardized operational frameworks and domain methodologies. When implementing or evaluating these findings, professionals frequently consider scalability, governance compliance, and cross-functional alignment.`;
-
   return {
     document_grounded_answer: groundedAnswer,
     citations,
-    supplemental_knowledge_answer: supplemental,
+    ...supplementalFields,
   };
+}
+
+async function generateWithGemini(apiKey: string, userPrompt: string): Promise<string> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastError: unknown;
+
+  for (const modelName of candidateModels) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+        systemInstruction: SYSTEM_PROMPT,
+      });
+      const result = await model.generateContent(userPrompt);
+      return result.response.text();
+    } catch (err: any) {
+      lastError = err;
+      const msg = String(err?.message || '');
+      const isModelNotFound = msg.includes('404') || msg.toLowerCase().includes('not found');
+      if (!isModelNotFound) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 export async function POST(req: NextRequest) {
@@ -165,51 +205,62 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cleanQuery = query.trim();
+
     // 1. Retrieve top-6 relevant chunks using Hybrid BM25 + Vector Search
     const retrievedChunks = await vectorStore.similaritySearch(
       sessionId,
-      query.trim(),
+      cleanQuery,
       6,
       apiKey
+    );
+
+    // 2. Fetch live online supplemental knowledge tailored to the user's question
+    const onlineResult = await fetchOnlineSupplementalKnowledge(
+      cleanQuery,
+      retrievedChunks,
+      session.metadata.filename
     );
 
     const activeApiKey = apiKey || session.apiKey || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY;
     const isGemini = provider === 'gemini' || (activeApiKey && activeApiKey.startsWith('AIza'));
 
+    const buildLlmDualResponse = (rawJsonText: string): DualRAGResponse => {
+      const parsed = JSON.parse(rawJsonText || '{}');
+      return {
+        document_grounded_answer:
+          parsed.document_grounded_answer ||
+          'I cannot find this information in the provided documents.',
+        citations: Array.isArray(parsed.citations) ? parsed.citations : [],
+        supplemental_knowledge_answer:
+          parsed.supplemental_knowledge_answer || onlineResult.synthesizedAnswer,
+        supplemental_sources: onlineResult.sources,
+        supplemental_mode: onlineResult.usedOnline ? 'llm+online' : 'llm',
+      };
+    };
+
     let dualResponse: DualRAGResponse;
 
     if (activeApiKey) {
-      const userPrompt = buildUserPrompt(query.trim(), retrievedChunks);
+      const userPrompt = buildUserPrompt(
+        cleanQuery,
+        retrievedChunks,
+        onlineResult.formattedForPrompt
+      );
 
       if (isGemini) {
         // --- GOOGLE GEMINI EXECUTION ---
         try {
-          const genAI = new GoogleGenerativeAI(activeApiKey);
-          const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash',
-            generationConfig: {
-              responseMimeType: 'application/json',
-              temperature: 0.1,
-            },
-            systemInstruction: SYSTEM_PROMPT,
-          });
-
-          const result = await model.generateContent(userPrompt);
-          const rawText = result.response.text();
-          const parsed = JSON.parse(rawText);
-
-          dualResponse = {
-            document_grounded_answer:
-              parsed.document_grounded_answer ||
-              'I cannot find this information in the provided documents.',
-            citations: Array.isArray(parsed.citations) ? parsed.citations : [],
-            supplemental_knowledge_answer:
-              parsed.supplemental_knowledge_answer ||
-              'No supplemental context available at this moment.',
-          };
+          const rawText = await generateWithGemini(activeApiKey, userPrompt);
+          dualResponse = buildLlmDualResponse(rawText);
         } catch (geminiErr: any) {
-          console.warn('Gemini inference failed, falling back to offline synthesizer:', geminiErr);
-          dualResponse = synthesizeOfflineAnswer(query.trim(), retrievedChunks, session.metadata.filename);
+          console.warn('Gemini inference failed, falling back to online/extractive synthesizer:', geminiErr);
+          dualResponse = synthesizeOfflineAnswer(
+            cleanQuery,
+            retrievedChunks,
+            session.metadata.filename,
+            onlineResult
+          );
         }
       } else {
         // --- OPENAI GPT-4O EXECUTION ---
@@ -226,25 +277,25 @@ export async function POST(req: NextRequest) {
           });
 
           const rawContent = completion.choices[0]?.message?.content || '{}';
-          const parsed = JSON.parse(rawContent);
-
-          dualResponse = {
-            document_grounded_answer:
-              parsed.document_grounded_answer ||
-              'I cannot find this information in the provided documents.',
-            citations: Array.isArray(parsed.citations) ? parsed.citations : [],
-            supplemental_knowledge_answer:
-              parsed.supplemental_knowledge_answer ||
-              'No supplemental context available at this moment.',
-          };
+          dualResponse = buildLlmDualResponse(rawContent);
         } catch (openAiErr: any) {
-          console.warn('OpenAI inference failed, falling back to offline synthesizer:', openAiErr);
-          dualResponse = synthesizeOfflineAnswer(query.trim(), retrievedChunks, session.metadata.filename);
+          console.warn('OpenAI inference failed, falling back to online/extractive synthesizer:', openAiErr);
+          dualResponse = synthesizeOfflineAnswer(
+            cleanQuery,
+            retrievedChunks,
+            session.metadata.filename,
+            onlineResult
+          );
         }
       }
     } else {
-      // --- BUILT-IN SMART EXTRACTIVE QA ENGINE (OFFLINE) ---
-      dualResponse = synthesizeOfflineAnswer(query.trim(), retrievedChunks, session.metadata.filename);
+      // --- BUILT-IN EXTRACTIVE QA + LIVE ONLINE KNOWLEDGE ---
+      dualResponse = synthesizeOfflineAnswer(
+        cleanQuery,
+        retrievedChunks,
+        session.metadata.filename,
+        onlineResult
+      );
     }
 
     return NextResponse.json({

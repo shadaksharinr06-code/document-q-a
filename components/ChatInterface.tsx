@@ -138,9 +138,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   ];
 
   const getEngineBadgeLabel = () => {
-    if (apiKey && provider === 'openai') return 'OpenAI GPT-4o';
-    if (apiKey && provider === 'gemini') return 'Google Gemini 1.5';
-    return 'Hybrid BM25 Extractive QA';
+    if (apiKey && provider === 'openai') return 'OpenAI GPT-4o + Online';
+    if (apiKey && provider === 'gemini') return 'Google Gemini + Online';
+    return 'Hybrid BM25 + Live Online QA';
   };
 
   return (
@@ -397,7 +397,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 mb-4 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-blue-600" />
                 <span>
-                  Using <strong>Hybrid BM25 + Extractive Synthesizer</strong>. It matches exact terminology, facts, and sentences from the document without needing any external API calls.
+                  Using <strong>Hybrid BM25 + Live Online Knowledge</strong>. It extracts grounded facts from your document and fetches question-specific online supplemental info without needing an API key.
                 </span>
               </div>
             )}

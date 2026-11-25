@@ -38,8 +38,9 @@ CRITICAL RULES FOR "document_grounded_answer" AND "citations":
 3. CITATIONS: Cite the document name, page, or section if available.
 
 CRITICAL RULES FOR "supplemental_knowledge_answer":
-1. Provide broader contextual insights, industry best practices, explanations, or related background retrieved from your broader knowledge base outside the document.
-2. Keep the tone helpful, professional, and clear."""
+1. Provide question-tailored extra information (definitions, background, real-world examples, best practices, or implications) specifically addressing the user's question outside the document.
+2. Avoid generic boilerplate; make every point relevant to the exact question asked.
+3. Keep the tone helpful, professional, and clear."""
 
 class DocumentRAGPipeline:
     def __init__(self, session_id: str, api_key: Optional[str] = None):

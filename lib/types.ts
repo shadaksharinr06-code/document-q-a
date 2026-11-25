@@ -22,10 +22,18 @@ export interface DocumentChunk {
   score?: number;
 }
 
+export interface SupplementalSource {
+  title: string;
+  url: string;
+  provider?: string;
+}
+
 export interface DualRAGResponse {
   document_grounded_answer: string;
   citations: string[];
   supplemental_knowledge_answer: string;
+  supplemental_sources?: SupplementalSource[];
+  supplemental_mode?: 'online' | 'llm' | 'llm+online' | 'offline';
 }
 
 export interface ChatMessage {

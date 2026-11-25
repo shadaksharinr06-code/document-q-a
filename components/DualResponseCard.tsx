@@ -247,7 +247,7 @@ export const DualResponseCard: React.FC<DualResponseCardProps> = ({
               <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-purple-100/70 border border-purple-200 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
                 <span className="text-[11px] font-medium text-purple-800">
-                  Generated from AI world knowledge, not found directly in document.
+                  Extra question-specific information from online &amp; world knowledge, outside your uploaded document.
                 </span>
               </div>
 
@@ -255,11 +255,45 @@ export const DualResponseCard: React.FC<DualResponseCardProps> = ({
               <div className="text-xs sm:text-sm text-slate-700 leading-relaxed space-y-2 whitespace-pre-line font-sans">
                 {response.supplemental_knowledge_answer}
               </div>
+
+              {/* Live Online Sources */}
+              {response.supplemental_sources && response.supplemental_sources.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-purple-100/80">
+                  <span className="text-[11px] font-semibold text-purple-700/80 uppercase tracking-wider block mb-1.5">
+                    Online References
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {response.supplemental_sources.map((src, sIdx) => (
+                      <a
+                        key={sIdx}
+                        href={src.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 hover:border-purple-300 transition-colors"
+                      >
+                        <span>
+                          {src.title}
+                          {src.provider ? ` (${src.provider})` : ''}
+                        </span>
+                        <ExternalLink className="w-3 h-3 text-purple-500" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 pt-3 border-t border-purple-100/60 flex items-center justify-between text-[11px] text-slate-400">
-              <span>External AI synthesis</span>
-              <span>GPT-4o World Knowledge</span>
+              <span>External knowledge synthesis</span>
+              <span>
+                {response.supplemental_mode === 'llm+online'
+                  ? 'AI + Live Online Sources'
+                  : response.supplemental_mode === 'online'
+                  ? 'Live Online Knowledge'
+                  : response.supplemental_mode === 'llm'
+                  ? 'AI World Knowledge'
+                  : 'Supplemental Context'}
+              </span>
             </div>
           </div>
         )}
